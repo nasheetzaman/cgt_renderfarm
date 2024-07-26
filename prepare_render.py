@@ -26,6 +26,32 @@ CURRENT_MAYA_FILE = cmds.file(q=True, sn=True)
 CURRENT_PROJECT_FOLDER = cmds.workspace(fullName=True)
 PROJECT_NAME = posixpath.basename(CURRENT_PROJECT_FOLDER)
 
+#Finds the correct workspace project folder for the currently open file.  
+def find_workspace(fix=False):
+    current_file = cmds.file(q=True, sn=True)
+    print(current_file)
+    current_workspace = cmds.workspace(fullName=True)
+     
+    if current_file.startswith(current_workspace):
+        correct_workspace = current_workspace
+    else:
+        correct_workspace=None
+        cmds.warning("Workspace was not set correctly:",current_workspace, "Finding correct workspace...")
+        for ws in cmds.workspace(listFullWorkspaces=True):
+            if current_file.startswith(ws):
+                print ("Correct workspace found:", ws)
+                correct_workspace = ws
+                break
+    
+    if correct_workspace == None:
+        cmds.error("A valid workspace was not found for ",current_file)
+    elif fix and (correct_workspace!=current_workspace): 
+        print("Setting workspace to ",correct_workspace)           
+        cmds.workspace(correct_workspace,openWorkspace=True)
+        
+    return correct_workspace
+                
+
 # List all dependencies (references, textures, caches, etc) within the currently open maya file 
 #
 # Returns a dictionary in the format:
