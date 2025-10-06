@@ -13,11 +13,12 @@ import maya.mel as mel
 
 #VERSION INFO:
 # v1.0.1    02.04.2024   Initial Creation
+# v1.0.2    11.21.2024   Added KNOY346 to DEADLINE_LABS
 
 __author__ = [ 'Nasheet Zaman' ]
-__version__ = 'v1.0.1'
+__version__ = 'v1.0.2'
 
-DEADLINE_LABS = ['DUDL1383','KNOY340']
+DEADLINE_LABS = ['DUDL1383','KNOY340','KNOY346']
 USERNAME = os.getlogin()
 RENDERFARM_DRIVE = 'J:'
 RENDERFARM_USERS_DIR = posixpath.join(RENDERFARM_DRIVE,'CGT','RENDER','Assets')
