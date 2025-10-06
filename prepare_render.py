@@ -14,9 +14,10 @@ import maya.mel as mel
 #VERSION INFO:
 # v1.0.1    02.04.2024   Initial Creation
 # v1.0.2    11.21.2024   Added KNOY346 to DEADLINE_LABS
+# v1.0.3    10.06.2025   Added check_and_fix_file()
 
 __author__ = [ 'Nasheet Zaman' ]
-__version__ = 'v1.0.2'
+__version__ = 'v1.0.3'
 
 DEADLINE_LABS = ['DUDL1383','KNOY340','KNOY346']
 USERNAME = os.getlogin()
@@ -163,8 +164,16 @@ def ready_to_render_dialog(filename):
     cmds.button( width=100, label='OK', command=('cmds.deleteUI(\"' + window + '\", window=True)') )
     #cmds.setParent( '..' )
     cmds.showWindow( window )
- 
-    
+
+
+# Fixes common issues in the currently open file that could halt the render 
+def check_and_fix_file():
+    # Delete NodeGraphEditorInfo nodes (these are created whenever the hypershade is open)
+    cmds.delete(cmds.ls(type="nodeGraphEditorInfo"))
+
+    # Uncheck "Abort on Error" in the render settings
+    cmds.setAttr("defaultArnoldRenderOptions.abortOnError", 0)
+
 # Collects the current maya file, all linked dependencies from the file, and the project folders
 # Copies them to the network render drive 
 # Resolves paths within the copied depencencies and the copied maya file
@@ -241,6 +250,9 @@ def archive_and_copy_to_renderdir():
     #create the image output directory for rendering    
     create_output_dir()
     
+    #Final fixes for issues that could hinder the render
+    check_and_fix_file()
+
     #Done
     cmds.file(save=True)
     ready_to_render_dialog(render_filepath)
