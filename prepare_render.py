@@ -15,18 +15,12 @@ import maya.mel as mel
 # v1.0.1    02.04.2024   Initial Creation
 # v1.0.2    11.21.2024   Added KNOY346 to DEADLINE_LABS
 # v1.0.3    10.06.2025   Added check_and_fix_file()
+# v1.0.4    11.18.2025   Registered Alembic Cache paths in File Path Editor, fixes incorrectly set workspaces, accounts for locked ref nodes
 
 __author__ = [ 'Nasheet Zaman' ]
-__version__ = 'v1.0.3'
+__version__ = 'v1.0.4'
 
-DEADLINE_LABS = ['DUDL1383','KNOY340','KNOY346']
-USERNAME = os.getlogin()
-RENDERFARM_DRIVE = 'J:'
-RENDERFARM_USERS_DIR = posixpath.join(RENDERFARM_DRIVE,'CGT','RENDER','Assets')
-RENDERFARM_USER_DIR = posixpath.join(RENDERFARM_USERS_DIR,USERNAME)
-CURRENT_MAYA_FILE = cmds.file(q=True, sn=True)
-CURRENT_PROJECT_FOLDER = cmds.workspace(fullName=True)
-PROJECT_NAME = posixpath.basename(CURRENT_PROJECT_FOLDER)
+
 
 #Finds the correct workspace project folder for the currently open file.  
 def find_workspace(fix=False):
@@ -52,7 +46,16 @@ def find_workspace(fix=False):
         cmds.workspace(correct_workspace,openWorkspace=True)
         
     return correct_workspace
-                
+
+
+DEADLINE_LABS = ['DUDL1383','KNOY340','KNOY346']
+USERNAME = os.getlogin()
+RENDERFARM_DRIVE = 'J:'
+RENDERFARM_USERS_DIR = posixpath.join(RENDERFARM_DRIVE,'CGT','RENDER','Assets')
+RENDERFARM_USER_DIR = posixpath.join(RENDERFARM_USERS_DIR,USERNAME)
+CURRENT_MAYA_FILE = cmds.file(q=True, sn=True)
+CURRENT_PROJECT_FOLDER = find_workspace(fix=True)
+PROJECT_NAME = posixpath.basename(CURRENT_PROJECT_FOLDER)
 
 # List all dependencies (references, textures, caches, etc) within the currently open maya file 
 #
@@ -126,16 +129,17 @@ def copyfile(src_file,dst_file,skip_newer=True):
 
 #Resolves all file paths within the current maya file by replacing the path of the source project with the path of the destination project. 
 def resolve_paths(source_project,dest_project):
-    nodes = cmds.filePathEditor(query=True, listFiles="",ao=True)
+    filepaths = cmds.filePathEditor(query=True, listFiles="",ao=True)
     
-    if not nodes:
+    if not filepaths:
         return
         
-    for node in nodes:
+    for filepath in filepaths:
         try:
-            cmds.filePathEditor( node, replaceField="pathOnly", replaceString=(source_project,dest_project), replaceAll=True)
+            cmds.filePathEditor( filepath, replaceField="pathOnly", replaceString=(source_project,dest_project), replaceAll=True)
+            print (source_project,dest_project, filepath)
         except:
-            cmds.error("Could not resolve: "+node)
+            cmds.error("Could not resolve: "+filepath)
             continue
             
 
@@ -165,11 +169,31 @@ def ready_to_render_dialog(filename):
     #cmds.setParent( '..' )
     cmds.showWindow( window )
 
+# Registers node types and attributes that might not be registered by default in the File Path Editor
+def register_filepath_attributes():
+
+    # Make sure Alembic Cache Nodes are registered in the file path editor
+
+    node_type = "AlembicNode"
+    attribute_name = "abc_File"
+    type_to_register = f"{node_type}.{attribute_name}"
+    label_name = "Alembic" # Custom label in the FPE UI
+
+    try:
+        cmds.filePathEditor(registerType=type_to_register, typeLabel=label_name)
+        print(f"Successfully registered '{type_to_register}' with the File Path Editor under label '{label_name}'.")
+    except RuntimeError as e:
+        # This might happen if it's already registered or the types are slightly different
+        cmds.warning(f"Could not register {type_to_register}. It might be already registered or an error occurred: {e}")
+
 
 # Fixes common issues in the currently open file that could halt the render 
 def check_and_fix_file():
     # Delete NodeGraphEditorInfo nodes (these are created whenever the hypershade is open)
     cmds.delete(cmds.ls(type="nodeGraphEditorInfo"))
+
+    # Register any filepath attributes that are not in the File Path Editor by default
+    register_filepath_attributes()
 
     # Uncheck "Abort on Error" in the render settings
     cmds.setAttr("defaultArnoldRenderOptions.abortOnError", 0)
@@ -180,6 +204,11 @@ def check_and_fix_file():
 # Opens the copied maya file. 
 def archive_and_copy_to_renderdir():
     
+    #Fixes for issues that could hinder the render
+    check_and_fix_file()
+    if (cmds.file(query=True, modified=True)):
+        mel.eval('incrementAndSaveScene 0;')
+
     #get all file dependencies
     dependencies = list_dependencies()      
     renderfarm_project = posixpath.join(RENDERFARM_USER_DIR,PROJECT_NAME)
@@ -199,7 +228,6 @@ def archive_and_copy_to_renderdir():
     elif CURRENT_MAYA_FILE.startswith(RENDERFARM_USER_DIR):
         cmds.workspace(renderfarm_project,openWorkspace=True)
         create_output_dir()
-        #print("SUCCESS: ", CURRENT_MAYA_FILE, " is ready to send to the renderfarm.")
         ready_to_render_dialog(CURRENT_MAYA_FILE)
         return
 
@@ -238,7 +266,7 @@ def archive_and_copy_to_renderdir():
     #unload references that were previously loaded (this prevents the script from trying to resolve paths that have already been resolved within the ref files)
     loaded_reference_files = [cmds.referenceQuery(file,referenceNode=True)  for file in cmds.file(reference=True, q=True) if cmds.referenceQuery(file, isLoaded=True)]
     for lr in loaded_reference_files:
-        cmds.file(unloadReference=lr)
+        cmds.file(unloadReference=lr, force=True)
     
     #resolve file paths in the main maya file
     resolve_paths(CURRENT_PROJECT_FOLDER,renderfarm_project)
@@ -249,15 +277,11 @@ def archive_and_copy_to_renderdir():
     
     #create the image output directory for rendering    
     create_output_dir()
-    
-    #Final fixes for issues that could hinder the render
-    check_and_fix_file()
 
     #Done
     cmds.file(save=True)
     ready_to_render_dialog(render_filepath)
     
-    #print("SUCCESS: ", render_filepath, " is ready to send to the renderfarm.")
 
 
 # Verifies that the user is sending the render from an approved lab, and then copies the necessary files onto the render network drive.   
